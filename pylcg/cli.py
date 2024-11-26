@@ -1,5 +1,11 @@
+#!/usr/bin/env python
+# PyLCG - Linear Congruential Generator for IP Sharding - Developed by acidvegas ib Python (https://github.com/acidvegas/pylcg)
+# pylcg/cli.py
+
 import argparse
+
 from .core import ip_stream
+
 
 def main():
 	parser = argparse.ArgumentParser(description='Ultra-fast random IP address generator with optional sharding')
@@ -25,6 +31,8 @@ def main():
 
 	for ip in ip_stream(args.cidr, args.shard_num, args.total_shards, args.seed, args.state):
 		print(ip)
+
+
 
 if __name__ == '__main__':
 	main()

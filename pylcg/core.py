@@ -1,5 +1,10 @@
+#!/usr/bin/env python
+# PyLCG - Linear Congruential Generator for IP Sharding - Developed by acidvegas ib Python (https://github.com/acidvegas/pylcg)
+# pylcg/core.py
+
 import ipaddress
 import random
+
 
 class LCG:
 	'''Linear Congruential Generator for deterministic random number generation'''
