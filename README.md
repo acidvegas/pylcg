@@ -14,16 +14,8 @@ PyLCG is a high-performance Python implementation of a memory-efficient IP addre
 
 ## Installation
 
-### From PyPI
 ```bash
 pip install pylcg
-```
-
-### From Source
-```bash
-git clone https://github.com/acidvegas/pylcg
-cd pylcg
-chmod +x pylcg.py
 ```
 
 ## Usage
@@ -31,7 +23,7 @@ chmod +x pylcg.py
 ### Command Line
 
 ```bash
-./pylcg.py 192.168.0.0/16 --shard-num 1 --total-shards 4 --seed 12345
+pylcg 192.168.0.0/16 --shard-num 1 --total-shards 4 --seed 12345
 ```
 
 ### As a Library
