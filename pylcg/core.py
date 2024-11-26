@@ -38,7 +38,7 @@ class IPRange:
 		return str(ipaddress.ip_address(self.start + index))
 
 
-def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 0):
+def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 0, state: int = None):
 	'''
 	Stream random IPs from the CIDR range. Optionally supports sharding.
 	Each IP in the range will be yielded exactly once in a pseudo-random order.
@@ -47,6 +47,7 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 	:param shard_num: Shard number (1-based), defaults to 1
 	:param total_shards: Total number of shards, defaults to 1 (no sharding)
 	:param seed: Random seed for LCG (default: random)
+	:param state: Resume from specific LCG state (default: None)
 	'''
 
 	# Convert to 0-based indexing internally
@@ -61,6 +62,10 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 
 	# Initialize LCG
 	lcg = LCG(seed + shard_index)
+	
+	# Set LCG state if provided
+	if state is not None:
+		lcg.current = state
 
 	# Calculate how many IPs this shard should generate
 	shard_size = ip_range.total // total_shards
@@ -77,3 +82,7 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 		if total_shards == 1 or index % total_shards == shard_index:
 			yield ip_range.get_ip_at_index(index)
 			remaining -= 1
+			# Save state every 1000 IPs
+			if remaining % 1000 == 0:
+				from .state import save_state
+				save_state(seed, cidr, shard_num, total_shards, lcg.current)

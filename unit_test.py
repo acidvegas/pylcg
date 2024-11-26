@@ -1,8 +1,9 @@
-#!/usr/bin/env python3
 import unittest
 import ipaddress
 import time
+
 from pylcg import IPRange, ip_stream, LCG
+
 
 class Colors:
 	BLUE   = '\033[94m'
@@ -17,14 +18,18 @@ def print_header(message: str) -> None:
 	print(f'TEST: {message}')
 	print(f'{"="*80}{Colors.ENDC}\n')
 
+
 def print_success(message: str) -> None:
 	print(f'{Colors.GREEN}✓ {message}{Colors.ENDC}')
+
 
 def print_info(message: str) -> None:
 	print(f"{Colors.CYAN}ℹ {message}{Colors.ENDC}")
 
+
 def print_warning(message: str) -> None:
 	print(f"{Colors.YELLOW}! {message}{Colors.ENDC}")
+
 
 class TestIPSharder(unittest.TestCase):
 	@classmethod
@@ -38,6 +43,7 @@ class TestIPSharder(unittest.TestCase):
 		network = ipaddress.ip_network(cls.test_cidr)
 		cls.all_ips = {str(ip) for ip in network}
 		print_success(f"Initialized test environment with {len(cls.all_ips):,} IPs")
+
 
 	def test_ip_range_initialization(self):
 		print_header('Testing IPRange initialization')
@@ -53,6 +59,7 @@ class TestIPSharder(unittest.TestCase):
 		print_success(f'IP range initialization completed in {elapsed:.6f}s')
 		print_info(f'IP range spans from {first_ip} to {last_ip}')
 		print_info(f'Total IPs in range: {ip_range.total:,}')
+
 
 	def test_lcg_sequence(self):
 		print_header('Testing LCG sequence generation')
@@ -79,6 +86,7 @@ class TestIPSharder(unittest.TestCase):
 		elapsed = time.perf_counter() - start_time
 
 		print_success(f'Verified LCG determinism in {elapsed:.6f}s')
+
 
 	def test_shard_distribution(self):
 		print_header('Testing shard distribution and randomness')
@@ -127,6 +135,8 @@ class TestIPSharder(unittest.TestCase):
 		sequential_percentage = (sequential_count / (len(ips_list)-1)) * 100
 
 		print_info(f'Sequential IP pairs in first 1000: {sequential_percentage:.2f}% (lower is more random)')
+
+
 
 if __name__ == '__main__':
 	print(f"\n{Colors.CYAN}{'='*80}")

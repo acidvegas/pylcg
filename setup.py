@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
 	name="pylcg",
-	version="1.0.2",
+	version="1.0.3",
 	author="acidvegas",
 	author_email="acid.vegas@acid.vegas",
 	description="Linear Congruential Generator for IP Sharding",
