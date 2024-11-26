@@ -155,14 +155,6 @@ We welcome contributions that improve PyLCG's performance. When submitting optim
 python3 unit_test.py
 ```
 
-## Roadmap
-
-- [ ] IPv6 support
-- [ ] Custom LCG parameters
-- [ ] Configurable chunk sizes
-- [ ] S3/URL input support
-- [ ] Extended benchmark suite
-
 ---
 
 ###### Mirrors: [acid.vegas](https://git.acid.vegas/pylcg) • [SuperNETs](https://git.supernets.org/acidvegas/pylcg) • [GitHub](https://github.com/acidvegas/pylcg) • [GitLab](https://gitlab.com/acidvegas/pylcg) • [Codeberg](https://codeberg.org/acidvegas/pylcg)
