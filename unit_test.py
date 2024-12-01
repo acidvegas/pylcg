@@ -1,6 +1,11 @@
-import unittest
+#!/usr/bin/env python
+# PyLCG - Linear Congruential Generator for IP Sharding - Developed by acidvegas ib Python (https://github.com/acidvegas/pylcg)
+# unit_test.py
+
+
 import ipaddress
 import time
+import unittest
 
 from pylcg import IPRange, ip_stream, LCG
 
