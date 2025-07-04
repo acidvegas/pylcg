@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# PyLCG - Linear Congruential Generator for IP Sharding - Developed by acidvegas ib Python (https://github.com/acidvegas/pylcg)
+# PyLCG - Linear Congruential Generator for IP Sharding - Developed by acidvegas in Python (https://github.com/acidvegas/pylcg)
 # setup.py
 
 from setuptools import setup, find_packages
@@ -9,7 +9,7 @@ with open('README.md', 'r', encoding='utf-8') as fh:
 
 setup(
 	name='pylcg',
-	version='1.0.3',
+	version='1.0.4',
 	author='acidvegas',
 	author_email='acid.vegas@acid.vegas',
 	description='Linear Congruential Generator for IP Sharding',

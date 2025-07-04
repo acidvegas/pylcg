@@ -146,9 +146,54 @@ This process ensures that:
 
 The sharding system employs an interleaved approach that ensures even distribution of work across multiple machines while maintaining randomness. Each shard operates independently using a deterministic sequence derived from the base seed plus the shard index. The system distributes IPs across shards using modulo arithmetic, ensuring that each IP is assigned to exactly one shard. This approach prevents sequential scanning patterns while guaranteeing complete coverage of the IP range. The result is a system that can efficiently parallelize work across any number of machines while maintaining the pseudo-random ordering that's crucial for network scanning applications.
 
-## Contributing
+### Exclusion System Mathematics
 
-### Performance Optimization
+The exclusion system operates on the fundamental integer representation of IP addresses. When excluding ranges, we perform the following transformations:
+
+For a CIDR block `192.168.1.0/24`:
+1. Convert to start/end integers: `[3232235776, 3232236031]`
+2. Any IP `x` is excluded if: `start <= x <= end`
+
+When multiple ranges are provided, we optimize by merging overlapping ranges. For example:
+```
+Range A : [3232235776, 3232236031] # 192.168.1.0/24
+Range B : [3232236032, 3232236287] # 192.168.2.0/24
+Merged  : [3232235776, 3232236287] # Continuous range
+```
+
+During IP generation, if our LCG produces index `i`, we calculate the actual IP using:
+```
+actual_index = i + sum(range_size for range in excluded_ranges where range.end < i)
+```
+
+This ensures excluded IPs are efficiently skipped while maintaining the random distribution properties of the LCG.
+
+### State Management Mathematics
+
+The state system exploits two key mathematical properties of Linear Congruential Generators:
+
+- `X` is the current state
+- `n` is the current index in the sequence
+
+###### State Transition Function
+```
+X_{n+1} = (1664525 * X_n + 1013904223) mod 2^32
+```
+This function maps any 32-bit state to the next state in the sequence.
+
+###### Sequence Recovery
+Given any state `X_n`, we can recover the exact position in the sequence because:
+- Each state uniquely determines all future states
+   - The period of our LCG equals the modulus (2^32)
+   - No state can lead to two different next states
+
+For example, if we save state `987654321`:
+```
+Next IP = start_ip + (987654321 * 1664525 + 1013904223) mod range_size
+```
+This mathematical property allows us to resume generation from any point without losing our position in the sequence.
+
+### Contributing
 
 We welcome contributions that improve PyLCG's performance. When submitting optimizations:
 
