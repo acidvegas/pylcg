@@ -11,7 +11,7 @@ import unittest
 
 from pylcg         import IPRange, ip_stream, LCG
 from pylcg.exclude import parse_excludes, optimize_ranges
-from pylcg.state   import save_state
+from pylcg.state   import save_state, StateManager
 
 
 class Colors:
@@ -544,13 +544,43 @@ class TestStateManagement(unittest.TestCase):
 		self.test_seed = 12345
 		self.excludes = ['192.168.0.0/24', '192.168.1.1']
 	
+	def test_state_manager(self):
+		'''Test StateManager functionality'''
+		
+		print_subheader('Testing StateManager')
+		start_time = time.perf_counter()
+		
+		# Test context manager and file handling
+		with StateManager(self.test_seed, self.test_cidr, 1, 1) as manager:
+			# Test initial state write
+			manager.update(12345)
+			
+			# Test file exists and is writable
+			self.assertTrue(os.path.exists(manager.state_file))
+			
+			# Test multiple rapid updates
+			for state in range(1000):
+				manager.update(state)
+			
+			# Verify final state
+			with open(manager.state_file, 'r') as f:
+				final_state = int(f.read().strip())
+			self.assertEqual(final_state, 999)
+		
+		# Test file handle is properly closed
+		self.assertFalse(manager.handle.closed)
+		
+		elapsed = time.perf_counter() - start_time
+		print_benchmark('StateManager rapid update tests', 1000, elapsed)
+	
 	def test_state_saving(self):
 		'''Test state file creation and format'''
 
 		start_time = time.perf_counter()
 		
 		# Test state file creation
-		save_state(self.test_seed, self.test_cidr, 1, 1, 12345)
+		with StateManager(self.test_seed, self.test_cidr, 1, 1) as manager:
+			manager.update(12345)
 		
 		# Verify file exists
 		state_file = os.path.join(tempfile.gettempdir(), f'pylcg_{self.test_seed}_{self.test_cidr.replace('/', '_')}_1_1.state')
@@ -632,9 +662,6 @@ class TestStateManagement(unittest.TestCase):
 				# Get LCG state at midpoint
 				lcg = generator.gi_frame.f_locals['lcg']
 				saved_state = lcg.current
-		
-		# Save state to file
-		save_state(self.test_seed, self.test_cidr, 1, 1, saved_state)
 		
 		# Resume from saved state
 		resumed_generator = ip_stream(self.test_cidr, 1, 1, self.test_seed, saved_state, self.excludes)

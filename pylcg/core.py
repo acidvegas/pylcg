@@ -6,7 +6,7 @@ import ipaddress
 import random
 
 from .exclude import parse_excludes, optimize_ranges, calculate_excluded_count
-from .state   import save_state
+from .state   import StateManager
 
 class LCG:
 	'''Linear Congruential Generator for deterministic random number generation'''
@@ -136,13 +136,13 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 				yielded += 1
 		lcg.current = state
 
-	# Generate IPs
-	while yielded < shard_size:
-		idx = lcg.next()
-		if idx < total_valid and idx % total_shards == shard_index:
-			yield ip_range.get_ip_at_index(idx)
-			yielded += 1
-			
-			# Save state periodically
-			if yielded % 1000 == 0:
-				save_state(seed, cidr, shard_num, total_shards, lcg.current)
+	# Initialize state manager
+	with StateManager(seed, cidr, shard_num, total_shards) as state_mgr:
+		# Generate IPs
+		while yielded < shard_size:
+			idx = lcg.next()
+			if idx < total_valid and idx % total_shards == shard_index:
+				yield ip_range.get_ip_at_index(idx)
+				yielded += 1
+				# Update state for every IP
+				state_mgr.update(lcg.current)
