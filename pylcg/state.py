@@ -27,27 +27,35 @@ class StateManager:
 		# Open file handle with line buffering (bufsize=1)
 		self.handle = open(self.state_file, 'w', buffering=1)
 	
+
 	def update(self, lcg_current: int) -> None:
 		'''
 		Update state efficiently
 		
 		:param lcg_current: Current LCG state
 		'''
+		
 		self.handle.seek(0)
 		self.handle.write(str(lcg_current))
 		self.handle.truncate()
 	
+
 	def close(self) -> None:
 		'''Close the file handle'''
+
 		if hasattr(self, 'handle'):
 			self.handle.close()
 	
+
 	def __enter__(self):
 		'''Context manager entry'''
+
 		return self
 	
+
 	def __exit__(self, exc_type, exc_val, exc_tb):
 		'''Context manager exit'''
+
 		self.close()
 
 
@@ -61,5 +69,6 @@ def save_state(seed: int, cidr: str, shard: int, total: int, lcg_current: int):
 	:param total: Total number of shards
 	:param lcg_current: Current LCG state
 	'''
+	
 	with StateManager(seed, cidr, shard, total) as manager:
 		manager.update(lcg_current)

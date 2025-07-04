@@ -8,6 +8,7 @@ import random
 from .exclude import parse_excludes, optimize_ranges, calculate_excluded_count
 from .state   import StateManager
 
+
 class LCG:
 	'''Linear Congruential Generator for deterministic random number generation'''
 
@@ -29,7 +30,6 @@ class LCG:
 		'''Generate next random number'''
 		self.current = (self.a * self.current + self.c) % self.m
 		return self.current
-
 
 
 class IPRange:
@@ -95,7 +95,6 @@ class IPRange:
 		
 		# If we get here, the index falls after all exclusions
 		return str(ipaddress.ip_address(current_ip + target))
-
 
 
 def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 0, state: int = None, exclude_list: list = None):

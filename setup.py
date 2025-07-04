@@ -4,12 +4,13 @@
 
 from setuptools import setup, find_packages
 
-with open('README.md', 'r', encoding='utf-8') as fh:
+
+with open('README.md', encoding='utf-8') as fh:
 	long_description = fh.read()
 
 setup(
 	name='pylcg',
-	version='1.2.7',
+	version='1.2.8',
 	author='acidvegas',
 	author_email='acid.vegas@acid.vegas',
 	description='Linear Congruential Generator for IP Sharding',
@@ -27,18 +28,17 @@ setup(
 		'License :: OSI Approved :: ISC License (ISCL)',
 		'Operating System :: OS Independent',
 		'Programming Language :: Python :: 3',
-		'Programming Language :: Python :: 3.6',
-		'Programming Language :: Python :: 3.7',
-		'Programming Language :: Python :: 3.8',
 		'Programming Language :: Python :: 3.9',
 		'Programming Language :: Python :: 3.10',
 		'Programming Language :: Python :: 3.11',
+		'Programming Language :: Python :: 3.12',
+		'Programming Language :: Python :: 3.13',
 		'Topic :: Internet',
 		'Topic :: Security',
 		'Topic :: Software Development :: Libraries :: Python Modules',
 	],
 	packages=find_packages(),
-	python_requires='>=3.6',
+	python_requires='>=3.9',
 	entry_points={
 		'console_scripts': [
 			'pylcg=pylcg.cli:main',

@@ -7,7 +7,7 @@ import os
 
 # Common reserved ranges
 RFC_RANGES = {
-    'private': [  # All private & reserved ranges
+    'private': [
         '0.0.0.0/8',         # Current network
         '10.0.0.0/8',        # Private network (Class A)
         '100.64.0.0/10',     # Carrier-grade NAT
