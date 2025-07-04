@@ -566,9 +566,12 @@ class TestStateManagement(unittest.TestCase):
 			with open(manager.state_file, 'r') as f:
 				final_state = int(f.read().strip())
 			self.assertEqual(final_state, 999)
+			
+			# Test file handle is open during context
+			self.assertFalse(manager.handle.closed)
 		
-		# Test file handle is properly closed
-		self.assertFalse(manager.handle.closed)
+		# Test file handle is properly closed after context
+		self.assertTrue(manager.handle.closed)
 		
 		elapsed = time.perf_counter() - start_time
 		print_benchmark('StateManager rapid update tests', 1000, elapsed)
