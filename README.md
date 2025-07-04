@@ -22,16 +22,43 @@ pip install pylcg
 
 ## Usage
 
-### Command Line
+### Command Line Arguments
+
+| Argument       | Required | Default | Description                                                                                                |
+|---------------|----------|---------|----------------------------------------------------------------------------------------------------------|
+| cidr          | Yes      | -       | Target IP range in CIDR format                                                                            |
+| --seed        | No       | Random  | Random seed for LCG (use when you need reproducible results)                                              |
+| --shard-num   | No       | 1       | Shard number (1-based)                                                                                    |
+| --total-shards| No       | 1       | Total number of shards                                                                                    |
+| --state       | No       | None    | Resume from specific LCG state (requires --seed to be set)                                               |
+| --exclude     | No       | None    | IPs/CIDRs to exclude (comma-separated list, file path, or 'private' for all private & reserved ranges)   |
+
+### Command Line Examples
 
 ```bash
-pylcg 192.168.0.0/16 --shard-num 1 --total-shards 4 --seed 12345
+# Basic usage (random seed each time)
+pylcg 192.168.0.0/16
 
-# Resume from previous state
-pylcg 192.168.0.0/16 --shard-num 1 --total-shards 4 --seed 12345 --state 987654321
+# Use specific seed for reproducible results
+pylcg 192.168.0.0/16 --seed 12345
+
+# Sharding with 4 total shards (random seed)
+pylcg 192.168.0.0/16 --shard-num 1 --total-shards 4
+
+# Exclude private & reserved ranges
+pylcg 0.0.0.0/0 --exclude private
+
+# Exclude specific IPs and ranges (comma-separated)
+pylcg 10.0.0.0/8 --exclude "10.0.0.1,10.0.0.2,10.0.1.0/24"
+
+# Exclude IPs/ranges from a file
+pylcg 0.0.0.0/0 --exclude excludes.txt
+
+# Resume from previous state (requires original seed)
+pylcg 192.168.0.0/16 --seed 12345 --state 987654321
 
 # Pipe to dig for PTR record lookups
-pylcg 192.168.0.0/16 --seed 12345 | while read ip; do
+pylcg 192.168.0.0/16 | while read ip; do
     echo -n "$ip -> "
     dig +short -x $ip
 done
@@ -43,17 +70,51 @@ pylcg 198.150.0.0/16 | xargs -I {} dig +short -x {}
 pylcg 198.150.0.0/16 | parallel "dig +short -x {} | sed 's/^/{} -> /'"
 ```
 
+### Exclude File Format
+```text
+# Comments are supported
+# Individual IPs
+8.8.8.8
+1.1.1.1
+
+# CIDR ranges
+10.0.0.0/8
+172.16.0.0/12
+192.168.0.0/16
+
+# Mix of both
+169.254.0.0/16
+203.0.113.37
+```
+
 ### As a Library
 
 ```python
 from pylcg import ip_stream
 
-# Basic usage
+# Basic usage (random seed)
+for ip in ip_stream('192.168.0.0/16'):
+    print(ip)
+
+# With specific seed
+for ip in ip_stream('192.168.0.0/16', seed=12345):
+    print(ip)
+
+# With sharding
 for ip in ip_stream('192.168.0.0/16', shard_num=1, total_shards=4, seed=12345):
     print(ip)
 
-# Resume from previous state
-for ip in ip_stream('192.168.0.0/16', shard_num=1, total_shards=4, seed=12345, state=987654321):
+# With exclusions
+excludes = [
+    '192.168.1.1',          # Single IP
+    '192.168.100.0/24',     # CIDR range
+    'private'               # All private & reserved ranges
+]
+for ip in ip_stream('0.0.0.0/0', exclude_list=excludes):
+    print(ip)
+
+# Resume from previous state (requires original seed)
+for ip in ip_stream('192.168.0.0/16', seed=12345, state=987654321):
     print(ip)
 ```
 
