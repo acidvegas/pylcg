@@ -3,8 +3,6 @@
 
 PyLCG is a high-performance Python implementation of a memory-efficient IP address sharding system using Linear Congruential Generators (LCG) for deterministic random number generation. This tool enables distributed scanning & network reconnaissance by efficiently dividing IP ranges across multiple machines while maintaining pseudo-random ordering.
 
-###### A GoLang version of this library is also available [here](https://github.com/acidvegas/golcg)
-
 ## Features
 
 - Memory-efficient IP range processing
@@ -251,6 +249,8 @@ We welcome contributions that improve PyLCG's performance. When submitting optim
 ```bash
 python3 unit_test.py
 ```
+
+###### A GoLang version of this library is also available [here](https://github.com/acidvegas/golcg)
 
 ---
 
