@@ -28,16 +28,36 @@ class StateManager:
 		self.handle = open(self.state_file, 'w', buffering=1)
 	
 
-	def update(self, lcg_current: int) -> None:
+	def update(self, lcg_current: int, yielded: int) -> None:
 		'''
 		Update state efficiently
 		
 		:param lcg_current: Current LCG state
+		:param yielded: Number of IPs yielded so far
 		'''
 		
 		self.handle.seek(0)
-		self.handle.write(str(lcg_current))
+		self.handle.write(f'{lcg_current},{yielded}')
 		self.handle.truncate()
+
+
+	@staticmethod
+	def load(filepath: str) -> tuple:
+		'''
+		Load state from a state file
+		
+		:param filepath: Path to the state file
+		:return: Tuple of (lcg_current, yielded) or (lcg_current, None) for legacy files
+		'''
+
+		with open(filepath, 'r') as f:
+			data = f.read().strip()
+
+		if ',' in data:
+			parts = data.split(',')
+			return int(parts[0]), int(parts[1])
+
+		return int(data), None
 	
 
 	def close(self) -> None:
@@ -59,7 +79,7 @@ class StateManager:
 		self.close()
 
 
-def save_state(seed: int, cidr: str, shard: int, total: int, lcg_current: int):
+def save_state(seed: int, cidr: str, shard: int, total: int, lcg_current: int, yielded: int = 0):
 	'''
 	Legacy save_state function for backwards compatibility
 	
@@ -68,7 +88,8 @@ def save_state(seed: int, cidr: str, shard: int, total: int, lcg_current: int):
 	:param shard: Shard number (1-based)
 	:param total: Total number of shards
 	:param lcg_current: Current LCG state
+	:param yielded: Number of IPs yielded so far
 	'''
 	
 	with StateManager(seed, cidr, shard, total) as manager:
-		manager.update(lcg_current)
+		manager.update(lcg_current, yielded)

@@ -30,7 +30,7 @@ pip install pylcg
 | --seed        | No       | Random  | Random seed for LCG (use when you need reproducible results)                                              |
 | --shard-num   | No       | 1       | Shard number (1-based)                                                                                    |
 | --total-shards| No       | 1       | Total number of shards                                                                                    |
-| --state       | No       | None    | Resume from specific LCG state (requires --seed to be set)                                               |
+| --state       | No       | None    | Resume from state file path or LCG state integer (requires --seed to be set)                             |
 | --exclude     | No       | None    | IPs/CIDRs to exclude (comma-separated list, file path, or 'private' for all private & reserved ranges)   |
 
 ### Command Line Examples
@@ -54,7 +54,10 @@ pylcg 10.0.0.0/8 --exclude "10.0.0.1,10.0.0.2,10.0.1.0/24"
 # Exclude IPs/ranges from a file
 pylcg 0.0.0.0/0 --exclude excludes.txt
 
-# Resume from previous state (requires original seed)
+# Resume from state file (requires original seed)
+pylcg 192.168.0.0/16 --seed 12345 --state /tmp/pylcg_12345_192.168.0.0_16_1_1.state
+
+# Resume from raw LCG state integer (legacy)
 pylcg 192.168.0.0/16 --seed 12345 --state 987654321
 
 # Pipe to dig for PTR record lookups
@@ -113,14 +116,14 @@ excludes = [
 for ip in ip_stream('0.0.0.0/0', exclude_list=excludes):
     print(ip)
 
-# Resume from previous state (requires original seed)
-for ip in ip_stream('192.168.0.0/16', seed=12345, state=987654321):
+# Resume from previous state (requires original seed and yielded count)
+for ip in ip_stream('192.168.0.0/16', seed=12345, state=987654321, resume_yielded=5000):
     print(ip)
 ```
 
 ## State Management & Resume Capability
 
-PyLCG automatically saves its state every 1000 IPs processed to enable resume functionality in case of interruption. The state is saved to a temporary file in your system's temp directory (usually `/tmp` on Unix systems or `%TEMP%` on Windows).
+PyLCG automatically saves its state after every IP yielded to enable resume functionality in case of interruption. The state file is written to your system's temp directory (usually `/tmp` on Unix systems or `%TEMP%` on Windows) using a line-buffered file handle for efficiency.
 
 The state file follows the naming pattern:
 ```
@@ -132,19 +135,16 @@ For example:
 pylcg_12345_192.168.0.0_16_1_4.state
 ```
 
-The state is saved in memory-mapped temporary storage to minimize disk I/O and improve performance. To resume from a previous state:
+The state file contains two comma-separated values: the LCG's internal state and the number of IPs yielded so far (e.g. `987654321,5000`). This allows instant resumption without replaying the sequence.
 
-1. Locate your state file in the temp directory
-2. Read the state value from the file
-3. Use the same parameters (CIDR, seed, shard settings) with the `--state` parameter
-
-Example of resuming:
+To resume, pass the state file path directly to `--state`:
 ```bash
-# Read the last state
-state=$(cat /tmp/pylcg_12345_192.168.0.0_16_1_4.state)
+pylcg 192.168.0.0/16 --shard-num 1 --total-shards 4 --seed 12345 --state /tmp/pylcg_12345_192.168.0.0_16_1_4.state
+```
 
-# Resume processing
-pylcg 192.168.0.0/16 --shard-num 1 --total-shards 4 --seed 12345 --state $state
+You can also pass a raw LCG state integer for backwards compatibility, though this triggers a slower replay to reconstruct progress:
+```bash
+pylcg 192.168.0.0/16 --seed 12345 --state 987654321
 ```
 
 Note: When using the `--state` parameter, you must provide the same `--seed` that was used in the original run.
@@ -167,92 +167,81 @@ By working with these integer representations, we can perform efficient mathemat
 
 ### Linear Congruential Generator
 
-PyLCG uses an optimized LCG implementation with three carefully chosen parameters that work together to generate high-quality pseudo-random sequences:
+PyLCG uses an LCG with the formula `X_{n+1} = (a * X_n + c) mod m` and three carefully chosen parameters:
 
 | Name       | Variable | Value        |
 |------------|----------|--------------|
 | Multiplier | `a`      | `1664525`    |
 | Increment  | `c`      | `1013904223` |
-| Modulus    | `m`      | `2^32`       |
+| Modulus    | `m`      | Power of 2   |
 
-###### Modulus
-The modulus value of `2^32` serves as both a mathematical and performance optimization choice. It perfectly matches the CPU's word size, allowing for extremely efficient modulo operations through simple bitwise AND operations. This choice means that all calculations stay within the natural bounds of CPU arithmetic while still providing a large enough period for even the biggest IP ranges we might encounter.
+The modulus is not a fixed value — it is set dynamically to the smallest power of 2 that is ≥ the number of valid IPs in the target range. For any CIDR `/N`, the range contains exactly `2^(32-N)` addresses (always a power of 2), so the modulus equals the range size exactly when no exclusions are applied.
 
-###### Multiplier
-The multiplier value of `1664525` was originally discovered through extensive mathematical analysis for the Numerical Recipes library. It satisfies the Hull-Dobell theorem's strict requirements for maximum period length in power-of-2 modulus LCGs, being both relatively prime to the modulus and one more than a multiple of 4. This specific value also performs exceptionally well in spectral tests, ensuring good distribution properties across the entire range while being small enough to avoid intermediate overflow in 32-bit arithmetic.
+These constants satisfy the **Hull-Dobell theorem**, which guarantees the LCG visits every integer in `[0, m-1]` exactly once before repeating (a "full period"). The three conditions are:
 
-###### Increment
-The increment value of `1013904223` is a carefully selected prime number that completes our parameter trio. When combined with our chosen multiplier and modulus, it ensures optimal bit mixing throughout the sequence and helps eliminate common LCG issues like short cycles or poor distribution. This specific value was selected after extensive testing showed it produced excellent statistical properties and passed rigorous spectral tests for dimensional distribution.
+1. `c` and `m` share no common factors — `c` is odd, `m` is a power of 2, so `gcd(c, m) = 1`
+2. `a - 1` is divisible by all prime factors of `m` — `a - 1 = 1664524` is divisible by 2 (the only prime factor of any power of 2)
+3. `a - 1` is divisible by 4 (required when `m` is divisible by 4) — `1664524 / 4 = 416131`
+
+The multiplier and increment values originate from the Numerical Recipes library and were selected for strong spectral test performance, ensuring good distribution across the sequence.
 
 ### Applying LCG to IP Addresses
 
-Once we have our IP addresses as integers, the LCG is used to generate a pseudo-random sequence that permutes through all possible values in our IP range:
+Once we have our IP addresses as integers, the LCG generates indices that map directly to IPs in the range:
 
-1. For a given IP range *(start_ip, end_ip)*, we calculate the range size: `range_size = end_ip - start_ip + 1`
+1. For a given IP range, calculate the number of valid IPs: `total_valid = end_ip - start_ip + 1` (minus any exclusions)
 
-2. The LCG generates a sequence using the formula: `X_{n+1} = (a * X_n + c) mod m`
+2. Set the LCG modulus to the smallest power of 2 ≥ `total_valid`
 
-3. To map this sequence back to valid IPs in our range:
-   - Generate the next LCG value
-   - Take modulo of the value with range_size to get an offset: `offset = lcg_value % range_size`
-   - Add this offset to start_ip: `ip = start_ip + offset`
+3. The LCG generates values in `[0, modulus-1]`. Each value is used as follows:
+   - If `idx >= total_valid`: **skip** it (rejection sampling — this value falls outside the range)
+   - If `idx < total_valid`: map it to an IP via `get_ip_at_index(idx)`, which translates the index to `start_ip + idx` (adjusting for any excluded ranges)
 
-This process ensures that:
-- Every IP in the range is visited exactly once
+Because the LCG has a full period, it visits every integer in `[0, modulus-1]` exactly once. Since `[0, total_valid-1]` is a subset, every valid index appears exactly once. This ensures:
+- Every IP in the range is visited exactly once, with no duplicates
 - The sequence appears random but is deterministic
-- We maintain constant memory usage regardless of range size
+- Memory usage is constant regardless of range size
 - The same seed always produces the same sequence
 
 ### Sharding Algorithm
 
-The sharding system employs an interleaved approach that ensures even distribution of work across multiple machines while maintaining randomness. Each shard operates independently using a deterministic sequence derived from the base seed plus the shard index. The system distributes IPs across shards using modulo arithmetic, ensuring that each IP is assigned to exactly one shard. This approach prevents sequential scanning patterns while guaranteeing complete coverage of the IP range. The result is a system that can efficiently parallelize work across any number of machines while maintaining the pseudo-random ordering that's crucial for network scanning applications.
+All shards use the same seed and the same LCG sequence. Each generated index `idx` is assigned to exactly one shard by `idx % total_shards == shard_index`. Since the LCG visits every index exactly once, each shard receives its fair share with no overlap and no gaps.
 
-### Exclusion System Mathematics
+Shard sizes are balanced to within 1 IP: each shard gets `total_valid // total_shards` IPs, with the first `total_valid % total_shards` shards receiving one extra. Because the indices are pseudo-randomly distributed, each shard's IPs are spread across the entire range rather than clustered in sequential blocks.
 
-The exclusion system operates on the fundamental integer representation of IP addresses. When excluding ranges, we perform the following transformations:
+### Exclusion System
 
-For a CIDR block `192.168.1.0/24`:
-1. Convert to start/end integers: `[3232235776, 3232236031]`
-2. Any IP `x` is excluded if: `start <= x <= end`
+Exclusion ranges are converted to integer `(start, end)` tuples, merged if overlapping or adjacent, and then clipped to the target CIDR bounds (so excluding `10.0.0.0/8` from a `10.0.0.0/24` target only subtracts the 256 IPs that actually overlap).
 
-When multiple ranges are provided, we optimize by merging overlapping ranges. For example:
+The LCG operates on a "virtual" index space of `[0, total_valid-1]` where `total_valid` is the CIDR size minus excluded IPs. The `get_ip_at_index` method translates a virtual index to a real IP by walking through the sorted exclusion ranges and skipping over gaps:
+
+```python
+target     = index
+current_ip = self.start
+
+for range_start, range_end in self.excluded_ranges:
+    gap = range_start - current_ip
+    if target < gap:
+        return str(ipaddress.ip_address(current_ip + target))
+    target     -= gap
+    current_ip  = range_end + 1
+
+return str(ipaddress.ip_address(current_ip + target))
 ```
-Range A : [3232235776, 3232236031] # 192.168.1.0/24
-Range B : [3232236032, 3232236287] # 192.168.2.0/24
-Merged  : [3232235776, 3232236287] # Continuous range
-```
 
-During IP generation, if our LCG produces index `i`, we calculate the actual IP using:
-```
-actual_index = i + sum(range_size for range in excluded_ranges where range.end < i)
-```
+For example, with range `10.0.0.0/24` excluding `10.0.0.5` and `10.0.0.10-12`:
+- Index 4 → `10.0.0.4` (before first exclusion)
+- Index 5 → `10.0.0.6` (skips `10.0.0.5`)
+- Index 9 → `10.0.0.13` (skips `10.0.0.10-12`)
 
-This ensures excluded IPs are efficiently skipped while maintaining the random distribution properties of the LCG.
+### State Management
 
-### State Management Mathematics
+The LCG is fully deterministic: given a state value, all future outputs are fixed. The state file saves two values after every yielded IP:
 
-The state system exploits two key mathematical properties of Linear Congruential Generators:
+1. `lcg.current` — the LCG's internal state, which determines all future outputs
+2. `yielded` — how many IPs have been generated so far, which determines where the shard is in its work
 
-- `X` is the current state
-- `n` is the current index in the sequence
-
-###### State Transition Function
-```
-X_{n+1} = (1664525 * X_n + 1013904223) mod 2^32
-```
-This function maps any 32-bit state to the next state in the sequence.
-
-###### Sequence Recovery
-Given any state `X_n`, we can recover the exact position in the sequence because:
-- Each state uniquely determines all future states
-   - The period of our LCG equals the modulus (2^32)
-   - No state can lead to two different next states
-
-For example, if we save state `987654321`:
-```
-Next IP = start_ip + (987654321 * 1664525 + 1013904223) mod range_size
-```
-This mathematical property allows us to resume generation from any point without losing our position in the sequence.
+To resume, both values are restored and generation continues from exactly where it stopped. No replay or recalculation is needed.
 
 ### Contributing
 

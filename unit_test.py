@@ -553,19 +553,19 @@ class TestStateManagement(unittest.TestCase):
 		# Test context manager and file handling
 		with StateManager(self.test_seed, self.test_cidr, 1, 1) as manager:
 			# Test initial state write
-			manager.update(12345)
+			manager.update(12345, 1)
 			
 			# Test file exists and is writable
 			self.assertTrue(os.path.exists(manager.state_file))
 			
 			# Test multiple rapid updates
 			for state in range(1000):
-				manager.update(state)
+				manager.update(state, state + 1)
 			
-			# Verify final state
-			with open(manager.state_file, 'r') as f:
-				final_state = int(f.read().strip())
-			self.assertEqual(final_state, 999)
+			# Verify final state via load
+			lcg_current, yielded = StateManager.load(manager.state_file)
+			self.assertEqual(lcg_current, 999)
+			self.assertEqual(yielded, 1000)
 			
 			# Test file handle is open during context
 			self.assertFalse(manager.handle.closed)
@@ -583,16 +583,16 @@ class TestStateManagement(unittest.TestCase):
 		
 		# Test state file creation
 		with StateManager(self.test_seed, self.test_cidr, 1, 1) as manager:
-			manager.update(12345)
+			manager.update(12345, 50)
 		
 		# Verify file exists
 		state_file = os.path.join(tempfile.gettempdir(), f'pylcg_{self.test_seed}_{self.test_cidr.replace('/', '_')}_1_1.state')
 		self.assertTrue(os.path.exists(state_file), 'State file not created')
 		
-		# Verify file content
-		with open(state_file, 'r') as f:
-			state = int(f.read().strip())
-		self.assertEqual(state, 12345, 'State not saved correctly')
+		# Verify file content via load
+		lcg_current, yielded = StateManager.load(state_file)
+		self.assertEqual(lcg_current, 12345, 'LCG state not saved correctly')
+		self.assertEqual(yielded, 50, 'Yielded count not saved correctly')
 		
 		elapsed = time.perf_counter() - start_time
 		print_benchmark('State saving tests', 1, elapsed)
@@ -630,9 +630,9 @@ class TestStateManagement(unittest.TestCase):
 		except StopIteration:
 			pass
 		
-		# Resume from midpoint
+		# Resume from midpoint using instant resume (resume_yielded)
 		resumed_ips = []
-		resumed_generator = ip_stream(self.test_cidr, seed=self.test_seed, state=midpoint_state)
+		resumed_generator = ip_stream(self.test_cidr, seed=self.test_seed, state=midpoint_state, resume_yielded=midpoint)
 		
 		try:
 			while len(resumed_ips) < len(initial_ips[midpoint:]):
@@ -666,8 +666,8 @@ class TestStateManagement(unittest.TestCase):
 				lcg = generator.gi_frame.f_locals['lcg']
 				saved_state = lcg.current
 		
-		# Resume from saved state
-		resumed_generator = ip_stream(self.test_cidr, 1, 1, self.test_seed, saved_state, self.excludes)
+		# Resume from saved state using instant resume
+		resumed_generator = ip_stream(self.test_cidr, 1, 1, self.test_seed, saved_state, self.excludes, resume_yielded=batch_size // 2)
 		resumed_batch = []
 		
 		# Generate remaining IPs
@@ -688,6 +688,248 @@ class TestStateManagement(unittest.TestCase):
 		
 		elapsed = time.perf_counter() - start_time
 		print_benchmark('Comprehensive state resumption tests', len(first_batch) + len(resumed_batch), elapsed)
+
+
+class TestExclusionClipping(unittest.TestCase):
+	'''Test that exclusion ranges are correctly clipped to target CIDR bounds'''
+
+	def setUp(self):
+		print_header('Testing Exclusion Clipping')
+
+	def test_exclusion_larger_than_target(self):
+		'''Exclusion that fully contains the target range'''
+
+		ip_range = IPRange('10.0.0.0/24', ['10.0.0.0/16'])
+		self.assertEqual(ip_range.total, 0, 'Exclusion larger than target should leave 0 IPs')
+
+	def test_exclusion_partially_overlapping(self):
+		'''Exclusion that partially overlaps the target'''
+
+		# 10.0.0.0/23 covers 10.0.0.0-10.0.1.255, target is 10.0.1.0-10.0.1.255
+		ip_range = IPRange('10.0.1.0/24', ['10.0.0.0/23'])
+		self.assertEqual(ip_range.total, 0, 'Exclusion covering all of target should leave 0 IPs')
+
+	def test_exclusion_entirely_outside_target(self):
+		'''Exclusion that has no overlap with target'''
+
+		ip_range = IPRange('192.168.1.0/24', ['10.0.0.0/8'])
+		self.assertEqual(ip_range.total, 256, 'Non-overlapping exclusion should not reduce total')
+
+	def test_exclusion_spanning_target_boundary(self):
+		'''Exclusion that starts before and ends within the target'''
+
+		# Target: 10.0.0.128/25 (128-255), exclude: 10.0.0.0/24 (0-255, fully covers target)
+		ip_range = IPRange('10.0.0.128/25', ['10.0.0.0/24'])
+		self.assertEqual(ip_range.total, 0)
+
+	def test_mixed_inside_and_outside_exclusions(self):
+		'''Mix of exclusions inside, outside, and overlapping the target'''
+
+		ip_range = IPRange('10.0.0.0/24', ['9.0.0.0/8', '10.0.0.50/32', '10.0.0.100/31', '11.0.0.0/8'])
+		# 9.0.0.0/8 and 11.0.0.0/8 are outside, 10.0.0.50 and 10.0.0.100-101 are inside
+		self.assertEqual(ip_range.total, 253)
+
+		# Verify no excluded IPs appear and all are within target
+		generated = set()
+		for i in range(ip_range.total):
+			ip = ip_range.get_ip_at_index(i)
+			ip_obj = ipaddress.ip_address(ip)
+			self.assertIn(ip_obj, ipaddress.ip_network('10.0.0.0/24'))
+			self.assertNotIn(ip, generated, f'Duplicate: {ip}')
+			generated.add(ip)
+		for excluded_ip in ['10.0.0.50', '10.0.0.100', '10.0.0.101']:
+			self.assertNotIn(excluded_ip, generated, f'Excluded IP appeared: {excluded_ip}')
+
+	def test_all_excluded_yields_nothing(self):
+		'''ip_stream yields nothing when all IPs are excluded'''
+
+		count = sum(1 for _ in ip_stream('10.0.0.0/24', seed=12345, exclude_list=['10.0.0.0/16']))
+		self.assertEqual(count, 0)
+
+
+class TestInputValidation(unittest.TestCase):
+	'''Test that invalid inputs raise clear errors'''
+
+	def setUp(self):
+		print_header('Testing Input Validation')
+
+	def test_invalid_cidr(self):
+		'''Invalid CIDR string raises ValueError'''
+
+		with self.assertRaises(ValueError):
+			IPRange('not_a_cidr')
+		with self.assertRaises(ValueError):
+			list(ip_stream('not_a_cidr'))
+
+	def test_host_bits_set(self):
+		'''CIDR with host bits set raises ValueError (strict=True)'''
+
+		with self.assertRaises(ValueError):
+			IPRange('192.168.1.1/24')
+
+	def test_total_shards_zero(self):
+		'''total_shards=0 raises ValueError'''
+
+		with self.assertRaises(ValueError):
+			list(ip_stream('10.0.0.0/24', total_shards=0, seed=1))
+
+	def test_shard_num_out_of_range(self):
+		'''shard_num outside [1, total_shards] raises ValueError'''
+
+		with self.assertRaises(ValueError):
+			list(ip_stream('10.0.0.0/24', shard_num=0, seed=1))
+		with self.assertRaises(ValueError):
+			list(ip_stream('10.0.0.0/24', shard_num=5, total_shards=4, seed=1))
+
+	def test_state_without_seed(self):
+		'''Resuming with state but no seed raises ValueError'''
+
+		with self.assertRaises(ValueError):
+			list(ip_stream('10.0.0.0/24', state=12345))
+
+	def test_invalid_exclude(self):
+		'''Invalid exclusion entries raise ValueError'''
+
+		with self.assertRaises(ValueError):
+			IPRange('10.0.0.0/24', ['not_an_ip'])
+		with self.assertRaises(ValueError):
+			IPRange('10.0.0.0/24', ['256.0.0.0'])
+
+
+class TestSeedZero(unittest.TestCase):
+	'''Test that seed=0 is a valid deterministic seed'''
+
+	def setUp(self):
+		print_header('Testing Seed Zero')
+
+	def test_seed_zero_deterministic(self):
+		'''seed=0 produces identical sequences across runs'''
+
+		ips_a = list(ip_stream('10.0.0.0/28', seed=0))
+		ips_b = list(ip_stream('10.0.0.0/28', seed=0))
+		self.assertEqual(ips_a, ips_b, 'seed=0 should be deterministic')
+		self.assertEqual(len(ips_a), 16)
+
+	def test_seed_zero_differs_from_seed_one(self):
+		'''seed=0 and seed=1 produce different sequences'''
+
+		ips_0 = list(ip_stream('10.0.0.0/28', seed=0))
+		ips_1 = list(ip_stream('10.0.0.0/28', seed=1))
+		self.assertNotEqual(ips_0, ips_1)
+
+
+class TestEdgeCaseCIDR(unittest.TestCase):
+	'''Test edge case CIDR sizes'''
+
+	def setUp(self):
+		print_header('Testing Edge Case CIDR Sizes')
+
+	def test_single_ip(self):
+		'''/32 range returns exactly one IP'''
+
+		ips = list(ip_stream('192.168.1.1/32', seed=0))
+		self.assertEqual(ips, ['192.168.1.1'])
+
+	def test_two_ips(self):
+		'''/31 range returns exactly two IPs'''
+
+		ips = list(ip_stream('192.168.1.0/31', seed=0))
+		self.assertEqual(len(ips), 2)
+		self.assertEqual(set(ips), {'192.168.1.0', '192.168.1.1'})
+
+	def test_small_range_complete_coverage(self):
+		'''/28 range (16 IPs) has complete coverage with no duplicates'''
+
+		ips = list(ip_stream('172.16.0.0/28', seed=42))
+		self.assertEqual(len(ips), 16)
+		self.assertEqual(len(set(ips)), 16)
+		for ip in ips:
+			self.assertIn(ipaddress.ip_address(ip), ipaddress.ip_network('172.16.0.0/28'))
+
+
+class TestStateManagerLoad(unittest.TestCase):
+	'''Test StateManager.load with different file formats'''
+
+	def setUp(self):
+		print_header('Testing StateManager Load')
+
+	def test_load_current_format(self):
+		'''Load state file with current format (lcg_current,yielded)'''
+
+		with StateManager(99, '10.0.0.0/24', 1, 1) as mgr:
+			mgr.update(54321, 100)
+			filepath = mgr.state_file
+		lcg_current, yielded = StateManager.load(filepath)
+		self.assertEqual(lcg_current, 54321)
+		self.assertEqual(yielded, 100)
+
+	def test_load_legacy_format(self):
+		'''Load state file with legacy format (lcg_current only)'''
+
+		legacy_file = os.path.join(tempfile.gettempdir(), 'pylcg_legacy_test.state')
+		with open(legacy_file, 'w') as f:
+			f.write('98765')
+		lcg_current, yielded = StateManager.load(legacy_file)
+		self.assertEqual(lcg_current, 98765)
+		self.assertIsNone(yielded)
+		os.remove(legacy_file)
+
+	def test_legacy_state_resume_fallback(self):
+		'''Legacy resume (state without resume_yielded) still works'''
+
+		cidr = '10.0.0.0/24'
+		seed = 555
+
+		gen = ip_stream(cidr, seed=seed)
+		all_ips = []
+		lcg_ref = None
+		for i in range(100):
+			all_ips.append(next(gen))
+			if i == 0:
+				lcg_ref = gen.gi_frame.f_locals['lcg']
+			if i == 49:
+				state_at_50 = lcg_ref.current
+
+		# Legacy resume: state only, no resume_yielded → triggers slow replay
+		resumed = list(ip for _, ip in zip(range(50), ip_stream(cidr, seed=seed, state=state_at_50)))
+		self.assertEqual(all_ips[50:], resumed, 'Legacy resume fallback should still work')
+
+
+class TestParseExcludesVariants(unittest.TestCase):
+	'''Test parse_excludes with different input types'''
+
+	def setUp(self):
+		print_header('Testing Parse Excludes Variants')
+
+	def test_private_keyword(self):
+		'''The "private" keyword loads all RFC reserved ranges'''
+
+		from pylcg.exclude import parse_excludes, RFC_RANGES
+		ranges = parse_excludes('private')
+		self.assertGreater(len(ranges), 0)
+		# Should have parsed all entries from RFC_RANGES['private']
+		self.assertEqual(len(ranges), len(RFC_RANGES['private']))
+
+	def test_comma_separated_string(self):
+		'''Comma-separated string is parsed correctly'''
+
+		from pylcg.exclude import parse_excludes
+		ranges = parse_excludes('10.0.0.1,10.0.0.2,10.0.0.3')
+		self.assertEqual(len(ranges), 3)
+		total = sum(end - start + 1 for start, end in ranges)
+		self.assertEqual(total, 3)
+
+	def test_file_input(self):
+		'''File path input is parsed correctly'''
+
+		from pylcg.exclude import parse_excludes
+		test_file = os.path.join(tempfile.gettempdir(), 'pylcg_test_excludes.txt')
+		with open(test_file, 'w') as f:
+			f.write('# comment line\n10.0.0.0/24\n192.168.1.1\n')
+		ranges = parse_excludes(test_file)
+		total = sum(end - start + 1 for start, end in ranges)
+		self.assertEqual(total, 257)  # 256 + 1
+		os.remove(test_file)
 
 
 if __name__ == '__main__':

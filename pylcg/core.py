@@ -55,8 +55,18 @@ class IPRange:
 		
 		# Handle exclusions
 		if exclude_list:
-			self.excluded_ranges = optimize_ranges(parse_excludes(exclude_list))  # Optimize the excluded ranges
-			self.total          -= calculate_excluded_count(self.excluded_ranges) # Calculate the number of excluded IPs
+			self.excluded_ranges = optimize_ranges(parse_excludes(exclude_list))
+
+			# Clip exclusion ranges to target CIDR bounds
+			clipped = []
+			for rs, re in self.excluded_ranges:
+				cs = max(rs, self.start)
+				ce = min(re, self.end)
+				if cs <= ce:
+					clipped.append((cs, ce))
+			self.excluded_ranges = clipped
+
+			self.total -= calculate_excluded_count(self.excluded_ranges)
 		else:
 			self.excluded_ranges = []
 
@@ -97,11 +107,27 @@ class IPRange:
 		return str(ipaddress.ip_address(current_ip + target))
 
 
-def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 0, state: int = None, exclude_list: list = None):
+def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = None, state: int = None, exclude_list: list = None, resume_yielded: int = None):
 	'''
 	Stream random IPs from the CIDR range. Optionally supports sharding.
 	Each IP in the range will be yielded exactly once in a pseudo-random order.
+
+	:param cidr: Target IP range in CIDR format
+	:param shard_num: Shard number (1-based, default: 1)
+	:param total_shards: Total number of shards (default: 1)
+	:param seed: Random seed for LCG (default: None for random)
+	:param state: LCG state to resume from (default: None)
+	:param exclude_list: List of IPs/CIDRs to exclude (default: None)
+	:param resume_yielded: Number of IPs already yielded when resuming (default: None)
 	'''
+
+	if total_shards < 1:
+		raise ValueError('total_shards must be at least 1')
+	if shard_num < 1 or shard_num > total_shards:
+		raise ValueError(f'shard_num must be between 1 and {total_shards}')
+	if state is not None and seed is None:
+		raise ValueError('seed is required when resuming from state')
+
 	# Convert to 0-based indexing internally
 	shard_index = shard_num - 1
 
@@ -109,8 +135,11 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 	ip_range    = IPRange(cidr, exclude_list)
 	total_valid = ip_range.total
 
+	if total_valid <= 0:
+		return
+
 	# Use random seed if none provided
-	if not seed:
+	if seed is None:
 		seed = random.randint(0, 2**32-1)
 
 	# Initialize LCG with a power of 2 modulus >= total_valid
@@ -126,14 +155,18 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 
 	yielded = 0
 
-	# If resuming from state, set LCG state and count yielded
+	# If resuming from state, restore LCG position
 	if state is not None:
-		temp_lcg = LCG(seed, modulus)
-		while temp_lcg.current != state:
-			idx = temp_lcg.next()
-			if idx < total_valid and idx % total_shards == shard_index:
-				yielded += 1
 		lcg.current = state
+		if resume_yielded is not None:
+			yielded = resume_yielded
+		else:
+			# Legacy fallback: replay LCG from seed to count yielded (slow)
+			temp_lcg = LCG(seed, modulus)
+			while temp_lcg.current != state:
+				idx = temp_lcg.next()
+				if idx < total_valid and idx % total_shards == shard_index:
+					yielded += 1
 
 	# Initialize state manager
 	with StateManager(seed, cidr, shard_num, total_shards) as state_mgr:
@@ -141,7 +174,6 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 		while yielded < shard_size:
 			idx = lcg.next()
 			if idx < total_valid and idx % total_shards == shard_index:
-				yield ip_range.get_ip_at_index(idx)
 				yielded += 1
-				# Update state for every IP
-				state_mgr.update(lcg.current)
+				state_mgr.update(lcg.current, yielded)
+				yield ip_range.get_ip_at_index(idx)
