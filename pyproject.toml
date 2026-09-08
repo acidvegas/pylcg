@@ -1,3 +1,40 @@
+# pylcg - Developed by acidvegas in Config (https://github.com/acidvegas)
+# pyproject.toml
+
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta" 
+requires      = ['setuptools>=61', 'wheel']
+build-backend = 'setuptools.build_meta'
+
+[project]
+name            = 'pylcg'
+version         = '2.0.0'
+description     = 'Linear Congruential Generator for IP Sharding'
+readme          = 'README.md'
+requires-python = '>=3.12'
+license         = 'ISC'
+license-files   = ['LICENSE']
+authors         = [{ name = 'acidvegas', email = 'acid.vegas@acid.vegas' }]
+keywords        = ['ip', 'sharding', 'lcg', 'scanning', 'reconnaissance']
+classifiers     = [
+	'Development Status :: 5 - Production/Stable',
+	'Intended Audience :: Developers',
+	'Operating System :: OS Independent',
+	'Programming Language :: Python :: 3',
+	'Programming Language :: Python :: 3.12',
+	'Programming Language :: Python :: 3.13',
+	'Topic :: Internet',
+	'Topic :: Security',
+	'Topic :: Software Development :: Libraries :: Python Modules',
+]
+
+[project.urls]
+Homepage      = 'https://github.com/acidvegas/pylcg'
+Source        = 'https://github.com/acidvegas/pylcg'
+Documentation = 'https://github.com/acidvegas/pylcg#readme'
+Issues        = 'https://github.com/acidvegas/pylcg/issues'
+
+[project.scripts]
+pylcg = 'pylcg.cli:main'
+
+[tool.setuptools]
+packages = ['pylcg']
