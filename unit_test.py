@@ -1040,7 +1040,7 @@ class TestStateManagement(unittest.TestCase):
 		path = os.path.join(tempfile.gettempdir(), 'pylcg_test_missing_field.state')
 
 		with open(path, 'w') as f:
-			f.write('pylcg2 seed=1 cidr=10.0.0.0/24 shard=1 total=1 step=5')
+			f.write('pylcg seed=1 cidr=10.0.0.0/24 shard=1 total=1 step=5')
 
 		with self.assertRaises(ValueError) as caught:
 			StateManager.load(path)

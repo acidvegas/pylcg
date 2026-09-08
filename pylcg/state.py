@@ -5,9 +5,9 @@
 import os
 
 
-# Bumped whenever the on-disk layout changes so a stale file is rejected loudly
-# instead of being misread as a position in the new scheme
-STATE_VERSION = 'pylcg2'
+# Leading token of a state file, so a file from an older layout is rejected rather
+# than misread as a position in the current one
+STATE_MARKER = 'pylcg'
 
 # A long run is worthless if its progress is wiped by a reboot, so state lives in
 # the home directory rather than a temp directory
@@ -51,7 +51,7 @@ class StateManager:
 		if path:
 			self.state_file = path
 		else:
-			file_name       = f'{STATE_VERSION}_{seed}_{cidr.replace("/", "_")}_{shard}_{total}_{fingerprint}.state'
+			file_name       = f'{STATE_MARKER}_{seed}_{cidr.replace("/", "_")}_{shard}_{total}_{fingerprint}.state'
 			self.state_file = os.path.join(STATE_DIR, file_name)
 
 		# Create the containing directory either way, so an explicit --state-file behaves
@@ -90,8 +90,8 @@ class StateManager:
 		with open(filepath, 'r') as f:
 			data = f.read().strip()
 
-		if not data.startswith(f'{STATE_VERSION} '):
-			raise ValueError(f'{filepath} is not a {STATE_VERSION} state file (state files written by pylcg < 2.0 store a raw LCG position and cannot be resumed, restart the run instead)')
+		if not data.startswith(f'{STATE_MARKER} '):
+			raise ValueError(f'{filepath} is not a pylcg state file (files written by pylcg < 2.0 store a raw LCG position and cannot be resumed, restart the run instead)')
 
 		state = {}
 
@@ -124,7 +124,7 @@ class StateManager:
 			self.before_write()
 
 		self.handle.seek(0)
-		self.handle.write(f'{STATE_VERSION} seed={self.seed} cidr={self.cidr} shard={self.shard} total={self.total} excludes={self.fingerprint} step={self.step}')
+		self.handle.write(f'{STATE_MARKER} seed={self.seed} cidr={self.cidr} shard={self.shard} total={self.total} excludes={self.fingerprint} step={self.step}')
 		self.handle.truncate()
 		self.handle.flush()
 

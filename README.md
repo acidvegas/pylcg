@@ -67,7 +67,7 @@ pylcg 10.0.0.0/8 --exclude "10.0.0.1,10.0.0.2,10.0.1.0/24"
 pylcg 0.0.0.0/0 --exclude excludes.txt
 
 # Resume exactly where it stopped
-pylcg 0.0.0.0/0 --seed 12345 --state ~/.pylcg/pylcg2_12345_0.0.0.0_0_1_1_4f53cda18c2baa0c.state
+pylcg 0.0.0.0/0 --seed 12345 --state ~/.pylcg/pylcg_12345_0.0.0.0_0_1_1_4f53cda18c2baa0c.state
 
 # Put the state file somewhere specific instead. Missing directories are created.
 pylcg 0.0.0.0/0 --seed 12345 --state-file ~/scans/shard1.state
@@ -149,13 +149,13 @@ Resuming needs exactly two things: the **seed** and the **step count**. Nothing 
 The state file is written to `~/.pylcg/` unless you pass `--state-file`:
 
 ```
-pylcg2_[seed]_[cidr]_[shard]_[total]_[exclusions].state
+pylcg_[seed]_[cidr]_[shard]_[total]_[exclusions].state
 ```
 
 Its contents are a single self-describing line:
 
 ```
-pylcg2 seed=12345 cidr=0.0.0.0/0 shard=1 total=4 excludes=4f53cda18c2baa0c step=1830000000
+pylcg seed=12345 cidr=0.0.0.0/0 shard=1 total=4 excludes=4f53cda18c2baa0c step=1830000000
 ```
 
 Because the file carries the seed, CIDR, shard layout and a digest of the exclusion list, resuming validates all of it. If any of them disagree with what you pass on the command line, pylcg refuses to start instead of quietly walking a different sequence.
@@ -307,12 +307,6 @@ python3 unit_test.py
 ```
 
 It covers the full-period property, jump-ahead correctness at billion-step scale, complete coverage across shard counts, every possible resume point on small ranges, repeated crash-and-resume over full runs, and the throughput characteristics above.
-
-###### A GoLang version of this library is also available [here](https://github.com/acidvegas/golcg). It has not been updated to match version 2.0 and will produce a different ordering.
-
----
-
-###### Mirrors: [SuperNETs](https://git.supernets.org/acidvegas/pylcg) - [GitHub](https://github.com/acidvegas/pylcg) - [GitLab](https://gitlab.com/acidvegas/pylcg) - [Codeberg](https://codeberg.org/acidvegas/pylcg)
 
 ---
 
