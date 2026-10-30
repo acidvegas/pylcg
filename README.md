@@ -1,6 +1,9 @@
 # PyLCG
 > Ultra-fast Linear Congruential Generator for IP Sharding
 
+> [!WARNING]
+> This project is no longer maintained and has been archived. Use [CLCG](https://github.com/acidvegas/clcg) instead.
+
 PyLCG is a high-performance Python implementation of a memory-efficient IP address sharding system using Linear Congruential Generators *(LCG)* for deterministic random number generation. This tool enables distributed scanning & network reconnaissance by efficiently dividing IP ranges across multiple machines while maintaining pseudo-random ordering.
 
 ## Features
@@ -22,26 +25,26 @@ pip install pylcg
 
 ### Command Line Arguments
 
-| Argument         | Required | Default  | Description                                                                                       |
-|------------------|----------|----------|---------------------------------------------------------------------------------------------------|
-| cidr             | Yes      | -        | Target IP range in CIDR format                                                                    |
-| --seed           | No       | Random   | Random seed for LCG *(use when you need reproducible results)*                                    |
-| --shard-num      | No       | 1        | Shard number *(1-based)*                                                                          |
-| --total-shards   | No       | 1        | Total number of shards                                                                            |
-| --state          | No       | None     | Resume from a state file path, or from a raw step number *(a raw step number requires --seed)*    |
-| --state-file     | No       | ~/.pylcg | Where to write the state file                                                                     |
-| --state-interval | No       | 1000     | Write the state file every N steps                                                                |
-| --no-state       | No       | Off      | Do not write a state file at all                                                                  |
-| --exclude        | No       | None     | IPs/CIDRs to exclude *(comma-separated list, file path, or 'private' for private & reserved)*      |
+| Argument         | Required | Default  | Description                                                                                    |
+|------------------|----------|----------|------------------------------------------------------------------------------------------------|
+| cidr             | Yes      | -        | Target IP range in CIDR format                                                                 |
+| --seed           | No       | Random   | Random seed for LCG *(use when you need reproducible results)*                                 |
+| --shard-num      | No       | 1        | Shard number *(1-based)*                                                                       |
+| --total-shards   | No       | 1        | Total number of shards                                                                         |
+| --state          | No       | None     | Resume from a state file path, or from a raw step number *(a raw step number requires --seed)* |
+| --state-file     | No       | ~/.pylcg | Where to write the state file                                                                  |
+| --state-interval | No       | 1000     | Write the state file every N steps                                                             |
+| --no-state       | No       | Off      | Do not write a state file at all                                                               |
+| --exclude        | No       | None     | IPs/CIDRs to exclude *(comma-separated list, file path, or 'private' for private & reserved)*  |
 
 ### Exit Codes
 
-| Code | Meaning                                                       |
-|------|---------------------------------------------------------------|
+| Code | Meaning                                                         |
+|------|-----------------------------------------------------------------|
 | 0    | Finished, or the reader closed the pipe *(`pylcg ... \| head`)* |
-| 1    | Could not write the state file                                |
-| 2    | Bad arguments, CIDR, exclude list or state file               |
-| 130  | Interrupted with Ctrl-C, position saved                       |
+| 1    | Could not write the state file                                  |
+| 2    | Bad arguments, CIDR, exclude list or state file                 |
+| 130  | Interrupted with Ctrl-C, position saved                         |
 
 Errors print one line to stderr. Nothing but IP addresses ever reaches stdout, including the random seed notice.
 
@@ -146,7 +149,7 @@ for ip in ip_stream('192.168.0.0/16', seed=12345, write_state=False):
 
 Resuming needs exactly two things: the **seed** and the **step count**. Nothing else. The step count is the number of steps the shard has already taken, and the generator can jump straight to that position without replaying anything.
 
-The state file is written to `~/.pylcg/` unless you pass `--state-file`:
+The state file is written to `~/.pylcg/` unless you pass `--state-file`. When resuming from a state file, progress keeps going to that same file:
 
 ```
 pylcg_[seed]_[cidr]_[shard]_[total]_[exclusions].state
@@ -203,21 +206,23 @@ By working with these integer representations, we can perform efficient mathemat
 
 PyLCG uses an LCG with the formula `X_{n+1} = (a * X_n + c) mod m` and three parameters:
 
-| Name       | Variable | Value        |
-|------------|----------|--------------|
-| Multiplier | `a`      | `1664525`    |
-| Increment  | `c`      | `1013904223` |
-| Modulus    | `m`      | Power of 2   |
+| Name       | Variable | Value                                |
+|------------|----------|--------------------------------------|
+| Multiplier | `a`      | `1664525`                            |
+| Increment  | `c`      | Derived from the seed *(always odd)* |
+| Modulus    | `m`      | Power of 2                           |
 
 The modulus is not a fixed value. It is set dynamically to the smallest power of 2 that is >= the number of valid IPs in the target range. For any CIDR `/N`, the range contains exactly `2^(32-N)` addresses *(always a power of 2)*, so the modulus equals the range size exactly when no exclusions are applied.
 
 These constants satisfy the **Hull-Dobell theorem**, which guarantees the LCG visits every integer in `[0, m-1]` exactly once before repeating *(a "full period")*. The three conditions are:
 
-1. `c` and `m` share no common factors. `c` is odd and `m` is a power of 2, so `gcd(c, m) = 1`
+1. `c` and `m` share no common factors. `c` is always odd and `m` is a power of 2, so `gcd(c, m) = 1`
 2. `a - 1` is divisible by all prime factors of `m`. `a - 1 = 1664524` is divisible by 2, the only prime factor of any power of 2
 3. `a - 1` is divisible by 4, required when `m` is divisible by 4. `1664524 / 4 = 416131`
 
-The multiplier and increment come from the Numerical Recipes library. Their published spectral testing was done for `m = 2^32`; PyLCG uses `m = 2^k` for whatever `k` the range needs, so the full-period guarantee carries over exactly but the spectral result does not automatically transfer to smaller moduli.
+The increment is the first 128 bits of `sha256(str(seed))` with the lowest bit set. Because any odd increment keeps the full period, this gives each seed its own visiting order rather than every seed walking one shared cycle from a different starting point. The seed itself sets the starting point.
+
+The multiplier comes from the Numerical Recipes library. Its published spectral testing was done for `m = 2^32`; PyLCG uses `m = 2^k` for whatever `k` the range needs, so the full-period guarantee carries over exactly but the spectral result does not automatically transfer to smaller moduli.
 
 Because those conditions only hold for a power-of-2 modulus, `LCG` rejects anything else. With `m = 1000` the period would collapse to 9 values, so it raises rather than silently handing back a generator that repeats almost immediately.
 
@@ -264,11 +269,11 @@ A shard jumps directly from one of its own steps to the next using a precomputed
 
 Coverage is always exact: every IP appears once, in exactly one shard. Shard *sizes* depend on whether any steps get rejected:
 
-| Case                                              | Shard size spread |
-|---------------------------------------------------|-------------------|
-| No exclusions                                     | within 1          |
-| Exclusions, shard count is a power of 2           | within 1          |
-| Exclusions, shard count is not a power of 2       | varies slightly   |
+| Case                                        | Shard size spread |
+|---------------------------------------------|-------------------|
+| No exclusions                               | within 1          |
+| Exclusions, shard count is a power of 2     | within 1          |
+| Exclusions, shard count is not a power of 2 | varies slightly   |
 
 Without exclusions `total_valid` equals the modulus, so every step produces an IP and the split is even by construction. With exclusions some steps map to no IP; when the shard count is a power of 2 those rejected steps still divide evenly across shards, so the split stays exact. Otherwise sizes scatter around the average by roughly `sqrt(n*p*(1-p))`. Measured on `10.0.0.0/16` with a `/18` excluded *(a harsh 25% rejection rate)*, 3 shards spread by 184 out of ~16,400 and 100 shards spread by 47 out of ~490. For `0.0.0.0/0 --exclude private` split 1000 ways it works out to about 0.02%.
 
@@ -297,7 +302,7 @@ For example, with range `10.0.0.0/24` excluding `10.0.0.5` and `10.0.0.10-12`:
 
 ## IPv6
 
-IPv6 CIDRs are accepted and work correctly for small ranges, but this is untested territory and not what the library is built for. The multiplier and increment are 32-bit constants; against a 2^128 modulus the full-period guarantee still holds but the distribution quality does not. Anything larger than a small prefix will not finish in any case.
+IPv6 CIDRs are accepted and work correctly for small ranges, but this is untested territory and not what the library is built for. The multiplier is a 32-bit constant; against a 2^128 modulus the full-period guarantee still holds but the distribution quality does not. Anything larger than a small prefix will not finish in any case.
 
 ## Contributing
 

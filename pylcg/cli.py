@@ -99,6 +99,10 @@ def run(args: argparse.Namespace):
 			args.seed   = state['seed']
 			resume_step = state['step']
 			expected    = state['excludes']
+
+			# Keep advancing the file being resumed from unless told to write elsewhere
+			if args.state_file is None:
+				args.state_file = args.state
 		else:
 			try:
 				resume_step = int(args.state)

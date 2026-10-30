@@ -51,7 +51,7 @@ class StateManager:
 		if path:
 			self.state_file = path
 		else:
-			file_name       = f'{STATE_MARKER}_{seed}_{cidr.replace("/", "_")}_{shard}_{total}_{fingerprint}.state'
+			file_name       = f'{STATE_MARKER}_{seed}_{cidr.replace("/", "_").replace(":", "_")}_{shard}_{total}_{fingerprint}.state'
 			self.state_file = os.path.join(STATE_DIR, file_name)
 
 		# Create the containing directory either way, so an explicit --state-file behaves
@@ -61,7 +61,9 @@ class StateManager:
 		if directory:
 			os.makedirs(directory, exist_ok=True)
 
-		self.handle = open(self.state_file, 'w')
+		# Open without truncating so a resumed file keeps its position until the first
+		# write replaces it, rather than sitting empty if the run is killed before then
+		self.handle = os.fdopen(os.open(self.state_file, os.O_RDWR | os.O_CREAT, 0o644), 'r+')
 
 
 	def close(self):

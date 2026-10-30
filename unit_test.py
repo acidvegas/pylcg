@@ -15,7 +15,7 @@ import time
 import unittest
 
 from pylcg         import IPRange, ip_stream, jump_params, LCG
-from pylcg.core    import LCG_INCREMENT, LCG_MULTIPLIER
+from pylcg.core    import LCG_MULTIPLIER, seed_increment
 from pylcg.exclude import optimize_ranges, parse_excludes, read_exclude_file
 from pylcg.state   import StateManager, STATE_DIR
 
@@ -184,13 +184,31 @@ class TestLCG(unittest.TestCase):
 		'''Verify the three Hull-Dobell conditions actually hold for the chosen constants'''
 
 		# c must be coprime to m, which for a power-of-2 modulus means c must be odd
-		self.assertEqual(LCG_INCREMENT % 2, 1, 'Increment must be odd to be coprime with a power-of-2 modulus')
+		for seed in range(10_000):
+			self.assertEqual(seed_increment(seed) % 2, 1, f'Increment for seed {seed} must be odd to be coprime with a power-of-2 modulus')
 
 		# a-1 must be divisible by every prime factor of m (2 is the only one)
 		self.assertEqual((LCG_MULTIPLIER - 1) % 2, 0, 'a-1 must be divisible by 2')
 
 		# a-1 must be divisible by 4 when m is divisible by 4
 		self.assertEqual((LCG_MULTIPLIER - 1) % 4, 0, 'a-1 must be divisible by 4')
+
+
+	def test_seeds_give_distinct_orders(self):
+		'''Different seeds must walk different cycles, not the same cycle from a different start'''
+
+		modulus = 2**10
+		orders  = set()
+
+		for seed in range(64):
+			lcg      = LCG(seed, modulus)
+			sequence = [lcg.next() for _ in range(modulus)]
+			start    = sequence.index(0)
+
+			# Rotate so every cycle starts at 0, making a rotation of the same order compare equal
+			orders.add(tuple(sequence[start:] + sequence[:start]))
+
+		self.assertGreater(len(orders), 1, 'Every seed walked the same cycle')
 
 
 	def test_lcg_sequence_properties(self):
@@ -298,8 +316,10 @@ class TestJumpAhead(unittest.TestCase):
 	def test_jump_params_identity(self):
 		'''A jump of zero steps must be the identity function'''
 
-		self.assertEqual(jump_params(2**32, 0), (1, 0), 'A zero-step jump should be the identity')
-		self.assertEqual(jump_params(2**32, 1), (LCG_MULTIPLIER, LCG_INCREMENT), 'A one-step jump should be the base parameters')
+		lcg = LCG(12345)
+
+		self.assertEqual(jump_params(2**32, 0, lcg.c), (1, 0), 'A zero-step jump should be the identity')
+		self.assertEqual(jump_params(2**32, 1, lcg.c), (LCG_MULTIPLIER, lcg.c), 'A one-step jump should be the base parameters')
 
 
 class TestExclusionFunctionality(unittest.TestCase):

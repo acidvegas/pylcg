@@ -7,7 +7,7 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 name            = 'pylcg'
-version         = '2.0.0'
+version         = '3.0.0'
 description     = 'Linear Congruential Generator for IP Sharding'
 readme          = 'README.md'
 requires-python = '>=3.12'

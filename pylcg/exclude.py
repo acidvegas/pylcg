@@ -29,7 +29,7 @@ RFC_RANGES = {
 }
 
 
-def parse_excludes(exclude_list: list) -> set:
+def parse_excludes(exclude_list: list, version: int = None) -> set:
 	'''
 	Convert a list of IPs/CIDRs to a set of (start, end) integer ranges
 
@@ -38,6 +38,7 @@ def parse_excludes(exclude_list: list) -> set:
 	                     - Comma-separated string of IPs/CIDRs
 	                     - File path containing IPs/CIDRs (one per line)
 	                     - "private" for all private & reserved ranges
+	:param version: Only keep entries of this IP version, skipping the rest (default: None for all)
 	'''
 
 	# Initialize the set of ranges
@@ -84,16 +85,15 @@ def parse_excludes(exclude_list: list) -> set:
 	# Parse each item in the exclude list
 	for item in expanded:
 		try:
-			# Handle single IP
-			if '/' not in item:
-				ip_int = int(ipaddress.ip_address(item))
-				ranges.add((ip_int, ip_int))
-			# Handle CIDR
-			else:
-				network = ipaddress.ip_network(item, strict=False)
-				ranges.add((int(network.network_address), int(network.broadcast_address)))
+			# A bare IP parses as a single-address network
+			network = ipaddress.ip_network(item, strict=False)
 		except ValueError:
 			raise ValueError(f'Invalid IP or CIDR: {item}')
+
+		# IPv4 and IPv6 share the same integer space, so an entry from the other
+		# family would exclude unrelated addresses from the target
+		if version is None or network.version == version:
+			ranges.add((int(network.network_address), int(network.broadcast_address)))
 
 	return ranges
 

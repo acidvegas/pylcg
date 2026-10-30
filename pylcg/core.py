@@ -11,18 +11,32 @@ from .exclude import parse_excludes, optimize_ranges, calculate_excluded_count
 from .state   import StateManager
 
 
-# Numerical Recipes constants. They satisfy the Hull-Dobell theorem for every
-# power-of-2 modulus, which is what guarantees the generator visits each index
-# exactly once before repeating.
+# Numerical Recipes multiplier. a-1 is divisible by 4, which together with an odd
+# increment satisfies the Hull-Dobell theorem for every power-of-2 modulus, so the
+# generator visits each index exactly once before repeating.
 LCG_MULTIPLIER = 1664525
-LCG_INCREMENT  = 1013904223
 
 # Formatting an IPv4 address is the single biggest per-IP cost, and joining three
 # cached octet strings beats every other approach tested
 OCTETS = [str(octet) for octet in range(256)]
 
 
-def jump_params(m: int, n: int) -> tuple:
+def seed_increment(seed: int) -> int:
+	'''
+	Derive the LCG increment from the seed
+
+	With a fixed increment every seed walks the same single cycle and only picks where
+	to enter it. Any odd increment keeps the full period, so deriving it from the seed
+	gives each seed its own order. It is hashed so it does not track the seed's low
+	bits, which already set the starting point, and is 128 bits wide to cover IPv6.
+
+	:param seed: The seed for the LCG
+	'''
+
+	return int.from_bytes(hashlib.sha256(str(seed).encode()).digest()[:16], 'big') | 1
+
+
+def jump_params(m: int, n: int, c: int) -> tuple:
 	'''
 	Compute the (multiplier, increment) of the LCG advanced n steps, modulo m
 
@@ -32,10 +46,11 @@ def jump_params(m: int, n: int) -> tuple:
 
 	:param m: The LCG modulus
 	:param n: Number of steps to compose
+	:param c: The LCG increment
 	'''
 
 	result_a, result_c = 1, 0
-	step_a,   step_c   = LCG_MULTIPLIER % m, LCG_INCREMENT % m
+	step_a,   step_c   = LCG_MULTIPLIER % m, c % m
 
 	while n:
 		if n & 1:
@@ -67,7 +82,7 @@ class LCG:
 		self.m       = m              # Modulus (should be >= total_valid)
 		self.mask    = m - 1          # Modulus is a power of 2, so & replaces the slower %
 		self.a       = LCG_MULTIPLIER # Multiplier (chosen for good period)
-		self.c       = LCG_INCREMENT  # Increment (chosen for good period)
+		self.c       = seed_increment(seed) & self.mask # Increment (odd, so the period stays full)
 		self.current = seed & self.mask # Current state
 
 
@@ -78,7 +93,7 @@ class LCG:
 		:param n: Number of steps to advance
 		'''
 
-		jump_a, jump_c = jump_params(self.m, n)
+		jump_a, jump_c = jump_params(self.m, n, self.c)
 
 		self.current = (jump_a * self.current + jump_c) & self.mask
 
@@ -122,7 +137,7 @@ class IPRange:
 		if exclude_list:
 			# Clip exclusion ranges to target CIDR bounds so an exclusion that only
 			# partially overlaps the target subtracts just the overlapping portion
-			for range_start, range_end in optimize_ranges(parse_excludes(exclude_list)):
+			for range_start, range_end in optimize_ranges(parse_excludes(exclude_list, network.version)):
 				clipped_start = max(range_start, self.start)
 				clipped_end   = min(range_end,   self.end)
 
@@ -233,14 +248,14 @@ def ip_stream(cidr: str, shard_num: int = 1, total_shards: int = 1, seed: int = 
 	if resume_step >= total_steps:
 		return
 
-	# Multiplier/increment that advances the LCG by one whole shard stride. The
-	# modulus is a power of 2, so the wraparound is a mask rather than a divide.
-	stride_a, stride_c = jump_params(modulus, total_shards)
-	stride_mask        = modulus - 1
-
 	# Jump straight to this shard's resume position instead of replaying the sequence
 	lcg = LCG(seed, modulus)
 	lcg.jump(shard_index + 1 + resume_step * total_shards)
+
+	# Multiplier/increment that advances the LCG by one whole shard stride. The
+	# modulus is a power of 2, so the wraparound is a mask rather than a divide.
+	stride_a, stride_c = jump_params(modulus, total_shards, lcg.c)
+	stride_mask        = modulus - 1
 
 	step = resume_step
 

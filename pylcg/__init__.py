@@ -4,6 +4,6 @@
 
 from .core import LCG, IPRange, ip_stream, jump_params
 
-__version__ = '2.0.0'
+__version__ = '3.0.0'
 __author__  = 'acidvegas'
 __all__     = ['LCG', 'IPRange', 'ip_stream', 'jump_params']
